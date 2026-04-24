@@ -303,8 +303,8 @@ Score formula: `final = score_p99 + score_det`
 ║  3       ║  Puma     ║  12704ms     ║  -3000 (cut)  ║  -1335.93             ║
 ║  4 HNSW  ║  Puma     ║  5.87ms      ║  +2231.50     ║  +4977.97             ║
 ║  5 HNSW  ║  Iodine   ║  4.62ms      ║  +2335.67     ║  +5082.14             ║
-║  6 ef200 ║  Iodine   ║  5.43ms      ║  +2264.83     ║  +5264.83  (best)     ║
-║  7 alloc ║  Iodine   ║  ~5ms est.   ║  est. +2300   ║  est. +5300           ║
+║  6 ef200 ║  Iodine   ║  5.43ms      ║  +2264.83     ║  +5264.83             ║
+║  7 stable║  Iodine   ║  5.54ms      ║  +2256.75     ║  +5256.75  (current)  ║
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
@@ -326,22 +326,23 @@ Score formula: `final = score_p99 + score_det`
 ╚═══════════════════════════════════════════════════════╝
 ```
 
-**Run 7 changes - allocation pressure reduction**
+**Run 7 changes - memory stability**
 
 ```
 ╔═══════════════════════════════════════════════════════╗
-║  peak build RSS     146 MB  (was 159 MB, -13 MB)      ║
-║  serving RSS        132 MB  (was 151 MB, -19 MB)      ║
-║  VmSwap             0 kB    (was up to 13 MB)         ║
+║  serving RSS api1   134 MB  (was 135 MB)              ║
+║  serving RSS api2   136 MB  (was 155 MB, -19 MB)      ║
+║  GC pressure        eliminated during load test       ║
 ╚═══════════════════════════════════════════════════════╝
 ```
 
 - `VectorNormalizer`: replaced `Time.iso8601` with Sakamoto DOW + string slice;
   saves ~9µs/request of GVL hold time and one Time allocation per null last_tx
-- `VectorNormalizer`: frozen `NIL_DIMS` constant for null last_tx path
+- `VectorNormalizer`: frozen `NIL_DIMS` constant for null last_tx path (no allocation on hot path)
 - `DatasetLoader`: removed dead `@norms_sq` (unused since HNSW replaced brute-force)
-- `DatasetLoader.build_hnsw_index`: reuses one Array buffer across 100k `add_point`
-  calls instead of `@matrix[i, true].to_a` per row; reduces peak build RSS by 13 MB
+- `config.ru`: added `GC.compact` after `DatasetLoader.load!`; compacts the Ruby heap
+  after the 100k-record JSON parse before Iodine starts threads; eliminates GC pressure
+  spike that caused p99=20ms regression under peak load on api2
 
 **Optimization path**
 
@@ -351,14 +352,16 @@ Brute-force Numo KNN   →  p99 12-14s, score  -1335
 + HNSW O(log N) ef=50  →  p99  5.87ms, score +4977  (breakthrough)
 + Iodine epoll 4t      →  p99  4.62ms, score +5082  (+104 pts)
 + HNSW ef=200          →  detect 3000/3000, score +5264  (+182 pts)
-+ alloc reduction R7   →  -13MB peak build / -19MB serving RSS / 0 swap
++ alloc reduction R7   →  Sakamoto DOW, NIL_DIMS const, removed dead @norms_sq
++ GC.compact R8        →  api2 RSS -19MB, eliminates GC spike under load
 ```
 
 The dominant gain came from HNSW: O(N)=100k comparisons → O(log N)≈17 node visits.
 Raising ef from 50 to 200 pushed detection accuracy to perfect (0 FP, 0 FN). Run 7
-reduces GC pressure and brings peak build memory to 146 MB, giving the build phase
-14 MB of headroom vs the 160 MB limit (was only 1 MB). The remaining p99 gap is the
-GVL - VectorNormalizer holds it for ~2-3ms per request.
+reduces per-request GVL hold time via Sakamoto DOW (no Time allocation on null last_tx
+path). Run 8 adds GC.compact after the dataset load, compacting the Ruby heap before
+Iodine starts threads - eliminates GC pressure spikes that caused p99 regression to
+20ms under peak load. Serving RSS: api1=134MB, api2=136MB, both well within 160MB limit.
 
 ---
 
