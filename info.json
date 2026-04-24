@@ -1,0 +1,7 @@
+{
+    "participants": ["Michael D."],
+    "social": ["https://github.com/Bulletdev"],
+    "source-code-repo": "https://github.com/Bulletdev/bulletonrails-ruby",
+    "stack": ["ruby", "roda", "iodine", "hnswlib", "numo-narray", "nginx"],
+    "open_to_work": false
+}
