@@ -28,11 +28,7 @@ module DatasetLoader
       n     = @matrix.shape[0]
       index = Hnswlib::HierarchicalNSW.new(space: 'l2', dim: 14)
       index.init_index(max_elements: n, m: 16, ef_construction: 200, random_seed: 42)
-      buf = Array.new(14, 0.0)
-      n.times do |i|
-        14.times { |j| buf[j] = @matrix[i, j] }
-        index.add_point(buf, i)
-      end
+      n.times { |i| index.add_point(@matrix[i, true].to_a, i) }
       index.set_ef(200)
       index
     end

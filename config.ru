@@ -17,5 +17,6 @@ require_relative 'app/fraud_scorer'
 require_relative 'app/app'
 
 DatasetLoader.load!
+GC.compact
 
 run App.freeze.app
