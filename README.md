@@ -386,8 +386,6 @@ To trigger the official test: open an issue with `rinha/test` in the description
 
 <div align="center">
 
-```
 ▓▒░ · Ruby is fast enough · ░▒▓
-```
 
 </div>
