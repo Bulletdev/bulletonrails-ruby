@@ -10,7 +10,10 @@
 ```
 
 <div align="center">
+  
+[![Auto-merge participant submission](https://github.com/zanfranceschi/rinha-de-backend-2026/actions/workflows/auto-merge-participant.yml/badge.svg)](https://github.com/zanfranceschi/rinha-de-backend-2026/actions/workflows/auto-merge-participant.yml)
 
+  
 [![Ruby Version](https://img.shields.io/badge/ruby-3.4-CC342D?logo=ruby)](https://www.ruby-lang.org/)
 [![Roda](https://img.shields.io/badge/roda-3.103-CC342D)](http://roda.jeremyevans.net/)
 [![Iodine](https://img.shields.io/badge/iodine-0.7.58-CC342D)](https://github.com/boazsegev/iodine)
