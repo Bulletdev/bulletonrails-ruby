@@ -12,11 +12,13 @@ class App < Roda
     end
 
     r.post 'fraud-score' do
+      response['Content-Type'] = 'application/json'
       payload = Oj.load(r.body.read, mode: :compat)
       FraudScorer.call(payload)
     rescue StandardError
       response.status = 200
-      { 'approved' => true, 'fraud_score' => 0.0 }
+      response['Content-Type'] = 'application/json'
+      FraudScorer::RESPONSES[0]
     end
   end
 end
