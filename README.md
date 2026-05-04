@@ -28,8 +28,8 @@
 ╔═════════════════════════════════════════════════════════════════╗
 ║  bulletonrails-ruby - Rinha de Backend 2026                     ║
 ╠═════════════════════════════════════════════════════════════════╣
-║  Fraud detection API using HNSW approximate KNN - Ruby/Roda     ║
-║  Roda + Iodine + Numo + hnswlib · 1 CPU / 350 MB · 2 instances  ║
+║  Fraud detection API using IVF approximate KNN - Ruby/Roda      ║
+║  Roda + Iodine + Numo + FAISS · 1 CPU / 350 MB · 2 instances    ║
 ╚═════════════════════════════════════════════════════════════════╝
 ```
 
@@ -73,11 +73,11 @@ POST /fraud-score
   Sentinel -1 for absent last_transaction.
         │
         ▼
-  KnnSearcher (HNSW)
+  KnnSearcher (IVF)
   ─────────────────
-  Approximate KNN via hnswlib HNSW index (O(log N)).
-  ef=200, m=16 - high-recall search, 0 false negatives.
-  GVL released during C search → threads run truly parallel.
+  Approximate KNN via FAISS IndexIVFFlat (nlist=64, nprobe=16).
+  Sequential cluster scan → SIMD-friendly, 0 false negatives.
+  index.freeze → no_gvl path → GVL released during C search.
         │
         ▼
   FraudScorer
@@ -108,7 +108,7 @@ POST /fraud-score
 | 12  | `mcc_risk`              | lookup from `mcc_risk.json` (default 0.5)|
 | 13  | `merchant_avg_amount`   | `clamp(merchant_avg / 10_000)`           |
 
-The reference dataset (100k vectors) is loaded once at startup as a `Numo::SFloat[100_000, 14]` matrix and an HNSW index is built from it. Both live in C heap - never touched by the Ruby GC on the hot path.
+The reference dataset (100k vectors) is loaded once at startup as a `Numo::SFloat[100_000, 14]` matrix and an IVF index is built from it. Both live in C heap - never touched by the Ruby GC on the hot path.
 
 ---
 
@@ -121,16 +121,18 @@ The reference dataset (100k vectors) is loaded once at startup as a `Numo::SFloa
 ║  Language            ║  Ruby 3.4                                          ║
 ║  HTTP framework      ║  Roda 3.103 - tree routing, ~0.1ms overhead        ║
 ║  HTTP server         ║  Iodine 0.7.58 - facil.io epoll, 1w x 4t           ║
-║  KNN search          ║  hnswlib 0.9.3 - HNSW O(log N), ef=200, m=16       ║
-║  Numeric core        ║  Numo::NArray 0.9 - vectorized C ops, Float32      ║
+║  KNN search          ║  FAISS 0.6.0 - IVF nlist=64 nprobe=16, no_gvl      ║
+║  Numeric core        ║  numo-narray-alt 0.10 - C++-compat fork, Float32   ║
 ║  JSON                ║  Oj 3.17 - 3-5x faster than stdlib JSON            ║
-║  Load balancer       ║  nginx 1.27-alpine - round-robin, keepalive 32     ║
-║  Container           ║  Docker Compose - bridge network, linux/amd64      ║
+║  Load balancer       ║  haproxy 2.9-alpine - TCP mode, round-robin        ║
+║                      ║                                                    ║
+║   Container          ║        Docker Compose - bridge network             ║
+║                      ║        linux/amd64 + linux/arm64                   ║
 ╚══════════════════════╩════════════════════════════════════════════════════╝
 ```
 
 **Why not Rails?**
-Rails consumes 150-200 MB per instance. With 2 instances + nginx, that exceeds the 350 MB total
+Rails consumes 150-200 MB per instance. With 2 instances + haproxy, that exceeds the 350 MB total
 budget. Roda runs in ~60 MB per instance and adds zero overhead for 2 static endpoints.
 
 **Why Iodine instead of Puma?**
@@ -138,11 +140,14 @@ Iodine is built on facil.io, a C event loop using epoll. It handles accept/read/
 asynchronously, overlapping I/O with computation. At 650 req/s, this reduces per-request
 overhead vs Puma's threaded model: p99 dropped from 5.87ms to 4.62ms.
 
-**Why HNSW instead of brute-force?**
-Brute-force KNN allocates ~11 MB per request and costs O(N) CPU time. At 650 req/s with
-0.45 CPU per instance, the queue backs up and p99 explodes to 12+ seconds. HNSW
-(Hierarchical Navigable Small World) reduces search to O(log N) - ~17 node visits vs 100k.
-The hnswlib C extension releases the GVL during search, enabling true thread parallelism.
+**Why FAISS IVF instead of HNSW?**
+HNSW has a structural floor: graph traversal with random memory access costs ~2.5ms
+(~17 node visits, constant cache misses). IVF (Inverted File Index) replaces graph traversal
+with sequential cluster scan: quantize the query to the nearest centroid, then scan only
+1/nlist of the vectors in sequential memory — SIMD-friendly and cache-coherent.
+Result: single-query p99 drops from ~2.5ms to ~341 µs (7x) with FP=0 FN=0 at nlist=64 nprobe=16.
+The FAISS gem releases the GVL when the index is frozen (Rice `no_gvl` path), enabling
+true thread parallelism identical to the previous hnswlib behavior.
 
 ---
 
@@ -150,7 +155,7 @@ The hnswlib C extension releases the GVL during search, enabling true thread par
 
 ```
                           :9999
-  k6 / test engine ──── nginx (LB)
+  k6 / test engine ──── haproxy (LB)
                            │   round-robin
               ┌────────────┴────────────┐
               ▼                         ▼
@@ -159,9 +164,9 @@ The hnswlib C extension releases the GVL during search, enabling true thread par
       1 worker, 4 threads       1 worker, 4 threads
               │                         │
      Numo::SFloat[100k,14]    Numo::SFloat[100k,14]
-     HNSW index (C heap)      HNSW index (C heap)
+     IVF index (C heap)       IVF index (C heap)
      LABELS[100k]             LABELS[100k]
-     (loaded at startup)      (loaded at startup)
+     (async background load) (async background load)
 ```
 
 ### Resource allocation
@@ -170,7 +175,7 @@ The hnswlib C extension releases the GVL during search, enabling true thread par
 ╔══════════════╦══════════╦════════════╗
 ║  Service     ║  CPUs    ║  Memory    ║
 ╠══════════════╬══════════╬════════════╣
-║  nginx       ║  0.10    ║  20 MB     ║
+║  haproxy     ║  0.10    ║  20 MB     ║
 ║  api1        ║  0.45    ║  160 MB    ║
 ║  api2        ║  0.45    ║  160 MB    ║
 ╠══════════════╬══════════╬════════════╣
@@ -310,13 +315,29 @@ Score formula: `final = score_p99 + score_det`
 ║  7 stable║  Iodine   ║  5.54ms      ║  +2256.75     ║  +5256.75             ║
 ║  8 gc    ║  Iodine   ║  6.34ms      ║  +2198.08     ║  +5198.08             ║
 ║  9 yjit  ║  Iodine   ║  ~3.7ms      ║  +2427        ║  +5427                ║
-║ 10 resp  ║  Iodine   ║  ~3.7ms      ║  ~2427        ║  ~5427  (current)     ║
+║ 10 resp  ║  Iodine   ║  ~3.7ms      ║  ~2427        ║  ~5427                ║
+║ 11 faiss ║  Iodine   ║  ~1.5ms est  ║  ~2825 est    ║  ~5825 est (current)  ║
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
-**Best benchmark - Run 9 (YJIT + exec-mem=8 + MALLOC_ARENA_MAX + hot-path opts)**
+**Best benchmark - Run 11 (FAISS IVF nlist=64 nprobe=16 — estimated)**
 
 ```
+╔═══════════════════════════════════════════════════════╗
+║  IVF search p99 (spike)  341 µs  (HNSW: ~2500 µs)     ║
+║  p99 total (estimate)    ~1.5 ms                      ║
+║  p99_score (estimate)    ~2825   (max 3000)           ║
+║  detection_score         3000.00  (max 3000)  PERFECT ║
+║  final_score (estimate)  ~5825  /  6000 max  (97.1%)  ║
+╠═══════════════════════════════════════════════════════╣
+║  IVF nlist=64 nprobe=16 vs exact search:              ║
+║  false_positives   0                                  ║
+║  false_negatives   0                                  ║
+║  GVL released      yes (index.freeze → no_gvl)        ║
+║  RSS (spike proc)  ~100 MB / 160 MB limit             ║
+╚═══════════════════════════════════════════════════════╝
+
+Run 9 (last official run):
 ╔═══════════════════════════════════════════════════════╗
 ║  p99 (best run)        3.27 ms                        ║
 ║  p99 (median 10 runs)  3.78 ms                        ║
@@ -324,13 +345,6 @@ Score formula: `final = score_p99 + score_det`
 ║  detection_score       3000.00  (max 3000)  PERFECT   ║
 ║  final_score (best)    5485.57  /  6000 max  (91.4%)  ║
 ║  final_score (median)  ~5427   /  6000 max  (90.5%)   ║
-╠═══════════════════════════════════════════════════════╣
-║  true_positives        4735 / 4812                    ║
-║  true_negatives        9546 / 9688                    ║
-║  false_positives       0                              ║
-║  false_negatives       0                              ║
-║  http_errors           0 / 14500                      ║
-║  memory (per instance) ~134 MB / 160 MB limit         ║
 ╚═══════════════════════════════════════════════════════╝
 ```
 
@@ -371,6 +385,26 @@ Score formula: `final = score_p99 + score_det`
   Gain is below p99 noise floor on this setup (~sub-µs per request); included for
   architectural correctness (same pattern used by the top C implementation).
 
+**Run 11 changes - FAISS IVF replaces hnswlib HNSW**
+
+- `KnnSearcher`: hnswlib HNSW (ef=200, m=16, ~2.5ms floor) replaced with FAISS
+  `IndexIVFFlat` (nlist=64, nprobe=16). IVF clusters the 100k vectors into 64 groups;
+  each query scans the 16 closest clusters sequentially (~25k vectors). Sequential
+  memory access is SIMD-friendly and avoids the random cache-miss pattern of graph traversal.
+- `DatasetLoader`: quantizer stored as `@quantizer` ivar — `IndexIVFFlat` holds a
+  non-owning C pointer to the quantizer; without the ivar, Ruby GC would collect it
+  and cause a segfault. Calling `index.freeze` enables Rice's `no_gvl` path, releasing
+  the GVL during search (same behavior as hnswlib).
+- `Gemfile`: `hnswlib` + `numo-narray` → `faiss` + `numo-narray-alt` (C++-compatible
+  fork required by Rice/FAISS binding; same `Numo::SFloat` API, no changes to
+  VectorNormalizer).
+- `Dockerfile`: builder adds `libblas-dev liblapack-dev cmake libgomp1`; runtime adds
+  `libblas3 liblapack3 libgomp1`. System `libfaiss-dev` is NOT installed — its headers
+  conflict with the gem's bundled FAISS source (`vendor/faiss/`); gem compiles from
+  bundled source instead.
+- Spike results: nlist=64 nprobe=16 gives FP=0 FN=0 vs exact IndexFlatL2 search across
+  all 100k training vectors. Single-query p99: 341 µs.
+
 **Optimization path**
 
 ```
@@ -383,6 +417,7 @@ Brute-force Numo KNN      →  p99 12-14s, score  -1335
 + GC.compact R8           →  api2 RSS -19MB, eliminates GC spike under load
 + YJIT exec-mem=8 R9      →  p99 ~3.7ms stable, score ~5427 avg (+229 pts)
 + pre-mounted responses R10→  eliminates Hash + Oj per request; gain within noise floor
++ FAISS IVF nlist=64 R11  →  IVF p99 341µs (7x vs HNSW), est final ~5825  (+398 pts)
 ```
 
 The dominant gain came from HNSW: O(N)=100k comparisons → O(log N)≈17 node visits.
@@ -392,6 +427,8 @@ path). Run 8 adds GC.compact after dataset load. Run 9 enables YJIT with a const
 8 MB code cache — the default 48 MB caused GC pressure by eating into the 26 MB headroom
 between serving RSS (~134 MB) and the container limit (160 MB). With exec-mem=8, YJIT
 JITs only the hot paths and stabilizes at p99 ~3.7ms across 9/10 benchmark runs.
+Run 11 breaks through the HNSW structural floor by replacing graph traversal with
+sequential IVF cluster scan: 341 µs IVF search p99 vs ~2500 µs HNSW (7x improvement).
 
 ---
 
