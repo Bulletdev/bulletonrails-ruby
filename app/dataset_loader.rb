@@ -14,7 +14,7 @@ module DatasetLoader
       records = Oj.load(content, mode: :compat)
 
       @matrix     = Numo::SFloat.cast(records.map { |r| r['vector'] })
-      @labels     = records.map { |r| r['label'] }.freeze
+      @labels     = records.map { |r| r['label'] == 'fraud' ? 1 : 0 }.freeze
       @hnsw_index = build_hnsw_index
     end
 

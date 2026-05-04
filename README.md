@@ -307,64 +307,80 @@ Score formula: `final = score_p99 + score_det`
 ║  4 HNSW  ║  Puma     ║  5.87ms      ║  +2231.50     ║  +4977.97             ║
 ║  5 HNSW  ║  Iodine   ║  4.62ms      ║  +2335.67     ║  +5082.14             ║
 ║  6 ef200 ║  Iodine   ║  5.43ms      ║  +2264.83     ║  +5264.83             ║
-║  7 stable║  Iodine   ║  5.54ms      ║  +2256.75     ║  +5256.75  (current)  ║
+║  7 stable║  Iodine   ║  5.54ms      ║  +2256.75     ║  +5256.75             ║
+║  8 gc    ║  Iodine   ║  6.34ms      ║  +2198.08     ║  +5198.08             ║
+║  9 yjit  ║  Iodine   ║  ~3.7ms      ║  +2427        ║  +5427  (current)     ║
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
-**Best benchmark - Run 6 (Iodine + HNSW ef=200)**
+**Best benchmark - Run 9 (YJIT + exec-mem=8 + MALLOC_ARENA_MAX + hot-path opts)**
 
 ```
 ╔═══════════════════════════════════════════════════════╗
-║  p99                   5.43 ms                        ║
-║  p99_score             2264.83  (max 3000)            ║
+║  p99 (best run)        3.27 ms                        ║
+║  p99 (median 10 runs)  3.78 ms                        ║
+║  p99_score (median)    ~2427  (max 3000)              ║
 ║  detection_score       3000.00  (max 3000)  PERFECT   ║
-║  final_score           5264.83  /  6000 max  (87.7%)  ║
+║  final_score (best)    5485.57  /  6000 max  (91.4%)  ║
+║  final_score (median)  ~5427   /  6000 max  (90.5%)   ║
 ╠═══════════════════════════════════════════════════════╣
-║  true_positives        4723 / 4812                    ║
-║  true_negatives        9524 / 9688                    ║
+║  true_positives        4735 / 4812                    ║
+║  true_negatives        9546 / 9688                    ║
 ║  false_positives       0                              ║
 ║  false_negatives       0                              ║
 ║  http_errors           0 / 14500                      ║
-║  memory (per instance) 127 MB / 160 MB limit          ║
+║  memory (per instance) ~134 MB / 160 MB limit         ║
 ╚═══════════════════════════════════════════════════════╝
 ```
 
-**Run 7 changes - memory stability**
+**Run 8 changes - GC compaction**
 
-```
-╔═══════════════════════════════════════════════════════╗
-║  serving RSS api1   134 MB  (was 135 MB)              ║
-║  serving RSS api2   136 MB  (was 155 MB, -19 MB)      ║
-║  GC pressure        eliminated during load test       ║
-╚═══════════════════════════════════════════════════════╝
-```
-
-- `VectorNormalizer`: replaced `Time.iso8601` with Sakamoto DOW + string slice;
-  saves ~9µs/request of GVL hold time and one Time allocation per null last_tx
-- `VectorNormalizer`: frozen `NIL_DIMS` constant for null last_tx path (no allocation on hot path)
-- `DatasetLoader`: removed dead `@norms_sq` (unused since HNSW replaced brute-force)
 - `config.ru`: added `GC.compact` after `DatasetLoader.load!`; compacts the Ruby heap
   after the 100k-record JSON parse before Iodine starts threads; eliminates GC pressure
   spike that caused p99=20ms regression under peak load on api2
+- Serving RSS: api1=134MB, api2=136MB, both well within 160MB limit
+
+**Run 9 changes - YJIT + hot-path allocation reduction**
+
+```
+╔═══════════════════════════════════════════════════════╗
+║  p99 improvement       ~40% vs baseline               ║
+║  score improvement     +229 pts (median) vs Run 8     ║
+║  detection             still perfect (0 FP, 0 FN)     ║
+╚═══════════════════════════════════════════════════════╝
+```
+
+- `Dockerfile`: `--yjit --yjit-exec-mem-size=8` — YJIT enabled with 8 MB code cache;
+  default 48 MB was competing with GC for the 26 MB headroom under the 160 MB limit,
+  causing GC pressure spikes. 8 MB is enough to JIT the hot paths (VectorNormalizer,
+  Roda routing, FraudScorer) without bloating RSS.
+- `Dockerfile`: `ENV MALLOC_ARENA_MAX=2` — limits glibc malloc arenas, reduces
+  allocator fragmentation under multi-threaded load.
+- `DatasetLoader`: labels stored as integers (1 = fraud, 0 = legit) instead of strings;
+  eliminates per-request string comparison and block overhead in FraudScorer.
+- `VectorNormalizer`: `NORM['...']` hash lookups extracted to frozen Float constants
+  (`MAX_AMOUNT`, `MAX_KM`, etc.); eliminates 9 Hash#[] calls per request on the hot path.
 
 **Optimization path**
 
 ```
-Brute-force Numo KNN   →  p99 12-14s, score  -1335
-+ BLAS identity trick  →  alloc 11MB → 800KB per request
-+ HNSW O(log N) ef=50  →  p99  5.87ms, score +4977  (breakthrough)
-+ Iodine epoll 4t      →  p99  4.62ms, score +5082  (+104 pts)
-+ HNSW ef=200          →  detect 3000/3000, score +5264  (+182 pts)
-+ alloc reduction R7   →  Sakamoto DOW, NIL_DIMS const, removed dead @norms_sq
-+ GC.compact R8        →  api2 RSS -19MB, eliminates GC spike under load
+Brute-force Numo KNN      →  p99 12-14s, score  -1335
++ BLAS identity trick     →  alloc 11MB → 800KB per request
++ HNSW O(log N) ef=50     →  p99  5.87ms, score +4977  (breakthrough)
++ Iodine epoll 4t         →  p99  4.62ms, score +5082  (+104 pts)
++ HNSW ef=200             →  detect 3000/3000, score +5264  (+182 pts)
++ alloc reduction R7      →  Sakamoto DOW, NIL_DIMS const, removed dead @norms_sq
++ GC.compact R8           →  api2 RSS -19MB, eliminates GC spike under load
++ YJIT exec-mem=8 R9      →  p99 ~3.7ms stable, score ~5427 avg (+229 pts)
 ```
 
 The dominant gain came from HNSW: O(N)=100k comparisons → O(log N)≈17 node visits.
 Raising ef from 50 to 200 pushed detection accuracy to perfect (0 FP, 0 FN). Run 7
 reduces per-request GVL hold time via Sakamoto DOW (no Time allocation on null last_tx
-path). Run 8 adds GC.compact after the dataset load, compacting the Ruby heap before
-Iodine starts threads - eliminates GC pressure spikes that caused p99 regression to
-20ms under peak load. Serving RSS: api1=134MB, api2=136MB, both well within 160MB limit.
+path). Run 8 adds GC.compact after dataset load. Run 9 enables YJIT with a constrained
+8 MB code cache — the default 48 MB caused GC pressure by eating into the 26 MB headroom
+between serving RSS (~134 MB) and the container limit (160 MB). With exec-mem=8, YJIT
+JITs only the hot paths and stabilizes at p99 ~3.7ms across 9/10 benchmark runs.
 
 ---
 

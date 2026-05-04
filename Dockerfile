@@ -19,5 +19,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY . .
 
+ENV MALLOC_ARENA_MAX=2
+
 EXPOSE 9999
-CMD ["bundle", "exec", "iodine", "-p", "9999"]
+CMD ["bundle", "exec", "iodine", "--yjit", "--yjit-exec-mem-size=8", "-p", "9999"]

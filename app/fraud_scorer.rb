@@ -6,7 +6,7 @@ module FraudScorer
   def self.call(payload)
     query_vec   = VectorNormalizer.call(payload)
     neighbors   = KnnSearcher.call(query_vec)
-    fraud_count = neighbors.count { |l| l == 'fraud' }
+    fraud_count = neighbors.sum
     fraud_score = fraud_count.to_f / KnnSearcher::K
 
     { 'approved' => fraud_score < THRESHOLD, 'fraud_score' => fraud_score }
