@@ -124,13 +124,15 @@ The reference dataset (100k vectors) is loaded once at startup as a `Numo::SFloa
 ║  KNN search          ║  FAISS 0.6.0 - IVF nlist=64 nprobe=16, no_gvl      ║
 ║  Numeric core        ║  numo-narray-alt 0.10 - C++-compat fork, Float32   ║
 ║  JSON                ║  Oj 3.17 - 3-5x faster than stdlib JSON            ║
-║  Load balancer       ║  nginx 1.27-alpine - round-robin, keepalive 32     ║
-║  Container           ║  Docker Compose - bridge network, linux/amd64      ║
+║  Load balancer       ║  haproxy 2.9-alpine - TCP mode, round-robin        ║
+║                      ║                                                    ║
+║   Container          ║        Docker Compose - bridge network             ║
+║                      ║        linux/amd64 + linux/arm64                   ║
 ╚══════════════════════╩════════════════════════════════════════════════════╝
 ```
 
 **Why not Rails?**
-Rails consumes 150-200 MB per instance. With 2 instances + nginx, that exceeds the 350 MB total
+Rails consumes 150-200 MB per instance. With 2 instances + haproxy, that exceeds the 350 MB total
 budget. Roda runs in ~60 MB per instance and adds zero overhead for 2 static endpoints.
 
 **Why Iodine instead of Puma?**
@@ -153,7 +155,7 @@ true thread parallelism identical to the previous hnswlib behavior.
 
 ```
                           :9999
-  k6 / test engine ──── nginx (LB)
+  k6 / test engine ──── haproxy (LB)
                            │   round-robin
               ┌────────────┴────────────┐
               ▼                         ▼
@@ -164,7 +166,7 @@ true thread parallelism identical to the previous hnswlib behavior.
      Numo::SFloat[100k,14]    Numo::SFloat[100k,14]
      IVF index (C heap)       IVF index (C heap)
      LABELS[100k]             LABELS[100k]
-     (loaded at startup)      (loaded at startup)
+     (async background load) (async background load)
 ```
 
 ### Resource allocation
@@ -173,7 +175,7 @@ true thread parallelism identical to the previous hnswlib behavior.
 ╔══════════════╦══════════╦════════════╗
 ║  Service     ║  CPUs    ║  Memory    ║
 ╠══════════════╬══════════╬════════════╣
-║  nginx       ║  0.10    ║  20 MB     ║
+║  haproxy     ║  0.10    ║  20 MB     ║
 ║  api1        ║  0.45    ║  160 MB    ║
 ║  api2        ║  0.45    ║  160 MB    ║
 ╠══════════════╬══════════╬════════════╣
