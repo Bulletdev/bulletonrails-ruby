@@ -1,0 +1,19 @@
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  Exclude:
+    - 'scripts/**/*'
+
+# Competition code — no public API, no library consumers.
+Style/Documentation:
+  Enabled: false
+
+# VectorNormalizer.call is a deliberate flat hot path: splitting it into sub-methods
+# would add Ruby call overhead on every request. Keep it inline.
+Metrics/AbcSize:
+  Exclude:
+    - 'app/vector_normalizer.rb'
+
+Metrics/MethodLength:
+  Exclude:
+    - 'app/vector_normalizer.rb'

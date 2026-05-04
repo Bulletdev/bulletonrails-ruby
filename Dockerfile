@@ -3,6 +3,11 @@ FROM ruby:3.4-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ruby-dev \
+    libblas-dev \
+    liblapack-dev \
+    cmake \
+    libgomp1 \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,6 +18,9 @@ FROM ruby:3.4-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libgomp1 \
+    libblas3 \
+    liblapack3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

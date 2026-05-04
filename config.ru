@@ -4,7 +4,6 @@ require 'zlib'
 require 'time'
 require 'oj'
 require 'numo/narray'
-require 'hnswlib'
 require 'iodine'
 
 Iodine.threads = 4

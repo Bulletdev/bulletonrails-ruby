@@ -30,7 +30,7 @@ module VectorNormalizer
     mon    = ts[5, 2].to_i
     dom    = ts[8, 2].to_i
     adj_y  = mon < 3 ? year - 1 : year
-    wday   = (adj_y + adj_y / 4 - adj_y / 100 + adj_y / 400 + DOW_TABLE[mon - 1] + dom) % 7
+    wday   = (adj_y + (adj_y / 4) - (adj_y / 100) + (adj_y / 400) + DOW_TABLE[mon - 1] + dom) % 7
     day    = (wday + 6) % 7
 
     amount     = tx['amount'].to_f
@@ -72,11 +72,11 @@ module VectorNormalizer
   end
   private_class_method :last_tx_dimensions
 
-  def self.clamp(x)
-    return 0.0 if x < 0.0
-    return 1.0 if x > 1.0
+  def self.clamp(val)
+    return 0.0 if val < 0.0
+    return 1.0 if val > 1.0
 
-    x.to_f
+    val.to_f
   end
   private_class_method :clamp
 end
