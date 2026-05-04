@@ -15,7 +15,9 @@ require_relative 'app/knn_searcher'
 require_relative 'app/fraud_scorer'
 require_relative 'app/app'
 
-DatasetLoader.load!
-GC.compact
+Thread.new do
+  DatasetLoader.load!
+  GC.compact
+end
 
 run App.freeze.app

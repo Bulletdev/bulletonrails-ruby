@@ -8,6 +8,10 @@ module DatasetLoader
   class << self
     attr_reader :matrix, :labels, :faiss_index
 
+    def loaded?
+      @loaded == true
+    end
+
     def load!
       path    = File.join(RESOURCES_PATH, 'references.json.gz')
       content = Zlib::GzipReader.open(path, &:read)
@@ -16,10 +20,7 @@ module DatasetLoader
       @matrix      = Numo::SFloat.cast(records.map { |r| r['vector'] })
       @labels      = records.map { |r| r['label'] == 'fraud' ? 1 : 0 }.freeze
       @faiss_index = build_faiss_index
-    end
-
-    def loaded?
-      !@matrix.nil?
+      @loaded      = true
     end
 
     private
