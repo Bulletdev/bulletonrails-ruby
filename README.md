@@ -309,7 +309,8 @@ Score formula: `final = score_p99 + score_det`
 ║  6 ef200 ║  Iodine   ║  5.43ms      ║  +2264.83     ║  +5264.83             ║
 ║  7 stable║  Iodine   ║  5.54ms      ║  +2256.75     ║  +5256.75             ║
 ║  8 gc    ║  Iodine   ║  6.34ms      ║  +2198.08     ║  +5198.08             ║
-║  9 yjit  ║  Iodine   ║  ~3.7ms      ║  +2427        ║  +5427  (current)     ║
+║  9 yjit  ║  Iodine   ║  ~3.7ms      ║  +2427        ║  +5427                ║
+║ 10 resp  ║  Iodine   ║  ~3.7ms      ║  ~2427        ║  ~5427  (current)     ║
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
@@ -361,6 +362,15 @@ Score formula: `final = score_p99 + score_det`
 - `VectorNormalizer`: `NORM['...']` hash lookups extracted to frozen Float constants
   (`MAX_AMOUNT`, `MAX_KM`, etc.); eliminates 9 Hash#[] calls per request on the hot path.
 
+**Run 10 changes - pre-mounted HTTP responses**
+
+- `FraudScorer`: `RESPONSES` array built at startup with `K+1` pre-serialized JSON strings;
+  since `fraud_score = fraud_count / K` has exactly `K+1` possible values, every response
+  is known at boot time. Eliminates Hash allocation + Oj serialization on every request.
+  Built dynamically from `K` and `THRESHOLD` — safe if the spec changes values.
+  Gain is below p99 noise floor on this setup (~sub-µs per request); included for
+  architectural correctness (same pattern used by the top C implementation).
+
 **Optimization path**
 
 ```
@@ -372,6 +382,7 @@ Brute-force Numo KNN      →  p99 12-14s, score  -1335
 + alloc reduction R7      →  Sakamoto DOW, NIL_DIMS const, removed dead @norms_sq
 + GC.compact R8           →  api2 RSS -19MB, eliminates GC spike under load
 + YJIT exec-mem=8 R9      →  p99 ~3.7ms stable, score ~5427 avg (+229 pts)
++ pre-mounted responses R10→  eliminates Hash + Oj per request; gain within noise floor
 ```
 
 The dominant gain came from HNSW: O(N)=100k comparisons → O(log N)≈17 node visits.
