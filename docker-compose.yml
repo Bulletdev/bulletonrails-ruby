@@ -24,7 +24,7 @@ services:
     expose:
       - "9999"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9999/ready"]
+      test: ["CMD", "curl", "-s", "http://localhost:9999/ready"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -43,7 +43,7 @@ services:
     expose:
       - "9999"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9999/ready"]
+      test: ["CMD", "curl", "-s", "http://localhost:9999/ready"]
       interval: 5s
       timeout: 3s
       retries: 20
