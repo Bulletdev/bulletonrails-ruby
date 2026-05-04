@@ -6,10 +6,8 @@ services:
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
-      api1:
-        condition: service_healthy
-      api2:
-        condition: service_healthy
+      - api1
+      - api2
     deploy:
       resources:
         limits:
@@ -23,12 +21,6 @@ services:
     hostname: api1
     expose:
       - "9999"
-    healthcheck:
-      test: ["CMD", "curl", "-s", "http://localhost:9999/ready"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 90s
     deploy:
       resources:
         limits:
@@ -42,12 +34,6 @@ services:
     hostname: api2
     expose:
       - "9999"
-    healthcheck:
-      test: ["CMD", "curl", "-s", "http://localhost:9999/ready"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 90s
     deploy:
       resources:
         limits:
