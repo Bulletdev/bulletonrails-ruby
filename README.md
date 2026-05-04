@@ -124,7 +124,7 @@ The reference dataset (100k vectors) is loaded once at startup as a `Numo::SFloa
 ║  KNN search          ║  FAISS 0.6.0 - IVF nlist=64 nprobe=16, no_gvl      ║
 ║  Numeric core        ║  numo-narray-alt 0.10 - C++-compat fork, Float32   ║
 ║  JSON                ║  Oj 3.17 - 3-5x faster than stdlib JSON            ║
-║  Load balancer       ║  haproxy 2.9-alpine - TCP mode, round-robin        ║
+║  Load balancer       ║  haproxy 2.9-alpine - HTTP mode, httpchk /ready    ║
 ║                      ║                                                    ║
 ║   Container          ║        Docker Compose - bridge network             ║
 ║                      ║        linux/amd64 + linux/arm64                   ║
