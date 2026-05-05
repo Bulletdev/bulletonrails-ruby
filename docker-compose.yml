@@ -17,7 +17,7 @@ services:
       - backend
 
   api1:
-    image: michaelbullet/bulletonrails-ruby:v3
+    image: michaelbullet/bulletonrails-ruby:v4
     hostname: api1
     expose:
       - "9999"
@@ -30,7 +30,7 @@ services:
       - backend
 
   api2:
-    image: michaelbullet/bulletonrails-ruby:v3
+    image: michaelbullet/bulletonrails-ruby:v4
     hostname: api2
     expose:
       - "9999"
