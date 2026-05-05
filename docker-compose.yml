@@ -1,6 +1,6 @@
 services:
   haproxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.0-alpine
     ports:
       - "9999:9999"
     volumes:
@@ -19,7 +19,7 @@ services:
       - backend
 
   api1:
-    image: michaelbullet/bulletonrails-ruby:latest
+    image: michaelbullet/bulletonrails-ruby:v3
     hostname: api1
     expose:
       - "9999"
@@ -38,7 +38,7 @@ services:
       - backend
 
   api2:
-    image: michaelbullet/bulletonrails-ruby:latest
+    image: michaelbullet/bulletonrails-ruby:v3
     hostname: api2
     expose:
       - "9999"
