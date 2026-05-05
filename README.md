@@ -1,11 +1,11 @@
 
 ```
->          ██████╗ ██╗   ██╗██╗     ██╗     ██████╗████████╗ 
->          ██╔══██╗██║   ██║██║     ██║     ██╔═══╝╚══██╔══╝
->          ██████╔╝██║   ██║██║     ██║     █████╗    ██║  
->          ██╔══██╗██║   ██║██║     ██║     ██╔══╝    ██║  
->          ██████╔╝╚██████╔╝██████╗ ██████╗ ██████╗   ██║  
->          ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚═════╝   ╚═╝  
+>            ██████╗ ██╗   ██╗██╗     ██╗     ██████╗████████╗ 
+>            ██╔══██╗██║   ██║██║     ██║     ██╔═══╝╚══██╔══╝
+>            ██████╔╝██║   ██║██║     ██║     █████╗    ██║  
+>            ██╔══██╗██║   ██║██║     ██║     ██╔══╝    ██║  
+>            ██████╔╝╚██████╔╝██████╗ ██████╗ ██████╗   ██║  
+>            ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚═════╝   ╚═╝  
               on Rails - Rinha de Backend 2026
 ```
 
@@ -17,7 +17,7 @@
 [![Ruby Version](https://img.shields.io/badge/ruby-3.4-CC342D?logo=ruby)](https://www.ruby-lang.org/)
 [![Roda](https://img.shields.io/badge/roda-3.103-CC342D)](http://roda.jeremyevans.net/)
 [![Iodine](https://img.shields.io/badge/iodine-0.7.58-CC342D)](https://github.com/boazsegev/iodine)
-[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker)](https://docs.docker.com/compose/)
+[![DockerHub](https://img.shields.io/badge/docker-hub-2496ED?logo=docker)](https://hub.docker.com/repository/docker/michaelbullet/bulletonrails-ruby/general)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 </div>
@@ -56,7 +56,9 @@ Submission for [Rinha de Backend 2026](https://github.com/zanfranceschi/rinha-de
 
 The challenge: build an API that receives a card transaction and decides - in real time - whether it is fraudulent, using vector similarity search against 100k labeled reference transactions.
 
-This submission proves that **Ruby can compete** in performance-sensitive scenarios when you pick the right tools. No Rails. No ActiveRecord. No framework overhead. Just Roda, Iodine, Numo::NArray for vectorized math, and hnswlib for O(log N) approximate nearest neighbor search.
+This submission proves that **Ruby can compete** in performance-sensitive scenarios when you pick the right tools. No Rails. No ActiveRecord. 
+
+No framework overhead. Just Roda, Iodine, Numo::NArray for vectorized math, and IVF index [ preview: hnswlib for O(log N) ] approximate nearest neighbor search.
 
 ---
 
@@ -144,7 +146,7 @@ overhead vs Puma's threaded model: p99 dropped from 5.87ms to 4.62ms.
 HNSW has a structural floor: graph traversal with random memory access costs ~2.5ms
 (~17 node visits, constant cache misses). IVF (Inverted File Index) replaces graph traversal
 with sequential cluster scan: quantize the query to the nearest centroid, then scan only
-1/nlist of the vectors in sequential memory — SIMD-friendly and cache-coherent.
+1/nlist of the vectors in sequential memory - SIMD-friendly and cache-coherent.
 Result: single-query p99 drops from ~2.5ms to ~341 µs (7x) with FP=0 FN=0 at nlist=64 nprobe=16.
 The FAISS gem releases the GVL when the index is frozen (Rice `no_gvl` path), enabling
 true thread parallelism identical to the previous hnswlib behavior.
@@ -320,7 +322,7 @@ Score formula: `final = score_p99 + score_det`
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
-**Best benchmark - Run 11 (FAISS IVF nlist=64 nprobe=16 — estimated)**
+**Best benchmark - Run 11 (FAISS IVF nlist=64 nprobe=16 - estimated)**
 
 ```
 ╔═══════════════════════════════════════════════════════╗
@@ -365,11 +367,11 @@ Run 9 (last official run):
 ╚═══════════════════════════════════════════════════════╝
 ```
 
-- `Dockerfile`: `--yjit --yjit-exec-mem-size=8` — YJIT enabled with 8 MB code cache;
+- `Dockerfile`: `--yjit --yjit-exec-mem-size=8` - YJIT enabled with 8 MB code cache;
   default 48 MB was competing with GC for the 26 MB headroom under the 160 MB limit,
   causing GC pressure spikes. 8 MB is enough to JIT the hot paths (VectorNormalizer,
   Roda routing, FraudScorer) without bloating RSS.
-- `Dockerfile`: `ENV MALLOC_ARENA_MAX=2` — limits glibc malloc arenas, reduces
+- `Dockerfile`: `ENV MALLOC_ARENA_MAX=2` - limits glibc malloc arenas, reduces
   allocator fragmentation under multi-threaded load.
 - `DatasetLoader`: labels stored as integers (1 = fraud, 0 = legit) instead of strings;
   eliminates per-request string comparison and block overhead in FraudScorer.
@@ -381,7 +383,7 @@ Run 9 (last official run):
 - `FraudScorer`: `RESPONSES` array built at startup with `K+1` pre-serialized JSON strings;
   since `fraud_score = fraud_count / K` has exactly `K+1` possible values, every response
   is known at boot time. Eliminates Hash allocation + Oj serialization on every request.
-  Built dynamically from `K` and `THRESHOLD` — safe if the spec changes values.
+  Built dynamically from `K` and `THRESHOLD` - safe if the spec changes values.
   Gain is below p99 noise floor on this setup (~sub-µs per request); included for
   architectural correctness (same pattern used by the top C implementation).
 
@@ -391,7 +393,7 @@ Run 9 (last official run):
   `IndexIVFFlat` (nlist=64, nprobe=16). IVF clusters the 100k vectors into 64 groups;
   each query scans the 16 closest clusters sequentially (~25k vectors). Sequential
   memory access is SIMD-friendly and avoids the random cache-miss pattern of graph traversal.
-- `DatasetLoader`: quantizer stored as `@quantizer` ivar — `IndexIVFFlat` holds a
+- `DatasetLoader`: quantizer stored as `@quantizer` ivar - `IndexIVFFlat` holds a
   non-owning C pointer to the quantizer; without the ivar, Ruby GC would collect it
   and cause a segfault. Calling `index.freeze` enables Rice's `no_gvl` path, releasing
   the GVL during search (same behavior as hnswlib).
@@ -399,7 +401,7 @@ Run 9 (last official run):
   fork required by Rice/FAISS binding; same `Numo::SFloat` API, no changes to
   VectorNormalizer).
 - `Dockerfile`: builder adds `libblas-dev liblapack-dev cmake libgomp1`; runtime adds
-  `libblas3 liblapack3 libgomp1`. System `libfaiss-dev` is NOT installed — its headers
+  `libblas3 liblapack3 libgomp1`. System `libfaiss-dev` is NOT installed - its headers
   conflict with the gem's bundled FAISS source (`vendor/faiss/`); gem compiles from
   bundled source instead.
 - Spike results: nlist=64 nprobe=16 gives FP=0 FN=0 vs exact IndexFlatL2 search across
@@ -421,14 +423,19 @@ Brute-force Numo KNN      →  p99 12-14s, score  -1335
 ```
 
 The dominant gain came from HNSW: O(N)=100k comparisons → O(log N)≈17 node visits.
-Raising ef from 50 to 200 pushed detection accuracy to perfect (0 FP, 0 FN). Run 7
-reduces per-request GVL hold time via Sakamoto DOW (no Time allocation on null last_tx
-path). Run 8 adds GC.compact after dataset load. Run 9 enables YJIT with a constrained
-8 MB code cache — the default 48 MB caused GC pressure by eating into the 26 MB headroom
-between serving RSS (~134 MB) and the container limit (160 MB). With exec-mem=8, YJIT
-JITs only the hot paths and stabilizes at p99 ~3.7ms across 9/10 benchmark runs.
-Run 11 breaks through the HNSW structural floor by replacing graph traversal with
-sequential IVF cluster scan: 341 µs IVF search p99 vs ~2500 µs HNSW (7x improvement).
+
+Raising ef from 50 to 200 pushed detection accuracy to perfect (0 FP, 0 FN). 
+
+Run 7 reduces per-request GVL hold time via Sakamoto DOW (no Time allocation on null last_tx
+path). Run 8 adds GC.compact after dataset load. 
+
+Run 9 enables YJIT with a constrained 8 MB code cache - the default 48 MB caused GC pressure by eating into the 26 MB headroom
+between serving RSS (~134 MB) and the container limit (160 MB). 
+With exec-mem=8, YJIT JITs only the hot paths and stabilizes at p99 ~3.7ms across 9/10 benchmark runs.
+
+Run 11 breaks through the HNSW structural floor by replacing graph traversal with sequential IVF cluster scan: 
+
+341 µs IVF search p99 vs ~2500 µs HNSW (7x improvement).
 
 ---
 
