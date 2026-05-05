@@ -58,7 +58,7 @@ The challenge: build an API that receives a card transaction and decides - in re
 
 This submission proves that **Ruby can compete** in performance-sensitive scenarios when you pick the right tools. No Rails. No ActiveRecord. 
 
-No framework overhead. Just Roda, Iodine, Numo::NArray for vectorized math, and IVF index [ preview: hnswlib for O(log N) ] approximate nearest neighbor search.
+No framework overhead. Just Roda, Iodine, Numo::NArray for vectorized math, and FAISS IVF approximate nearest neighbor search.
 
 ---
 
@@ -198,10 +198,10 @@ Limit: 1 CPU / 350 MB. Used: 1.00 CPU / 340 MB.
 git clone https://github.com/bulletdev/bulletonrails-ruby
 cd bulletonrails-ruby
 
-# Build and run (HNSW index builds at startup, ~60s)
+# Build and run (IVF index trains at startup, ~20-30s)
 docker compose up --build -d
 
-# Wait for ready (port 9999 opens only after index build completes)
+# Wait for ready (HAProxy only routes after /ready returns 200)
 until curl -sf http://localhost:9999/ready; do sleep 3; done && echo "ready"
 
 # Test a legitimate transaction
@@ -322,7 +322,7 @@ Score formula: `final = score_p99 + score_det`
 ╚══════════╩═══════════╩══════════════╩═══════════════╩═══════════════════════╝
 ```
 
-**Best benchmark - Run 11 (FAISS IVF nlist=64 nprobe=16 - estimated)**
+**Best benchmark - Run 11 (FAISS IVF nlist=64 nprobe=16 — spike bench, waiting  oficial run)**
 
 ```
 ╔═══════════════════════════════════════════════════════╗
@@ -451,7 +451,7 @@ Run 11 breaks through the HNSW structural floor by replacing graph traversal wit
 ╚════════════════════════════════════════════════════════════╝
 ```
 
-To trigger the official test: open an issue with `rinha/test` in the description.
+To trigger the official test: open an issue with `rinha/test` in the description into official rinha repository.
 
 ---
 
